@@ -28,6 +28,17 @@ npx wrangler secret put ACCOUNT_ID
 | `API_TOKEN` | Cloudflare API Token with Zero Trust Edit + Workers Scripts Edit permissions |
 | `ACCOUNT_ID` | Cloudflare Account ID |
 
+### Initial Configuration
+After deploying, the pending override revert cron is **not active** until configured. Set it up via one of:
+
+- **Admin Settings UI** at `/admin` → Settings → *Cron interval (minutes)* — saves to D1 and immediately registers the live cron schedule
+- **Directly in D1** by inserting the config values:
+  ```sql
+  INSERT OR REPLACE INTO config (key, value) VALUES ('cron_interval_mins', '5');
+  INSERT OR REPLACE INTO config (key, value) VALUES ('revert_after_mins', '5');
+  ```
+  Then call the schedules API manually or trigger a settings save from the admin UI to activate the cron.
+
 ## Deployment
 
 ```bash
@@ -111,10 +122,10 @@ Audit log of all system events with timestamps.
 
 | Schedule | Purpose |
 |---|---|
-| `0 1 * * *` | Daily reset — empties the `identity` field on all tracked Gateway rules |
+| `0 1 * * *` | Daily reset — empties the `identity` field on all tracked Gateway rules (hardcoded in `wrangler.jsonc`) |
 | `*/N * * * *` | Pending revert — reverts Gateway rules for abandoned overrides older than `revert_after_mins` |
 
-The pending revert cron interval (`N`) defaults to 5 minutes and can be changed at runtime via the admin Settings modal without redeploying.
+The pending revert cron is **fully dynamic** — it is not defined in `wrangler.jsonc`. It must be activated and configured via the admin Settings UI or directly in D1. Once set, changing `cron_interval_mins` via the admin UI immediately updates the live Worker schedule via the Cloudflare API without redeploying.
 
 ## Admin Dashboard
 
