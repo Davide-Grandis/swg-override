@@ -936,7 +936,6 @@ async function handleAdminDashboard(env) {
 
   const statusBadge = (s) => {
     if (s === 'ACTIVE') return '<span class="badge badge-active">ACTIVE</span>';
-    if (s === 'REVERTED') return '<span class="badge badge-reverted">REVERTED</span>';
     return '';
   };
 
