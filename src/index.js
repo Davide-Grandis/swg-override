@@ -1468,7 +1468,11 @@ async function handleAdminDashboard(env) {
           updateLiveBtn();
           if (liveSeconds <= 0) {
             clearInterval(liveInterval);
-            location.reload();
+            if (!document.getElementById('settings-modal').classList.contains('open')) {
+              location.reload();
+            } else {
+              startLive();
+            }
           }
         }, 1000);
       }
