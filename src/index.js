@@ -62,6 +62,8 @@ export default {
             if (!putResponse.ok) {
               const errText = await putResponse.text();
               errors.push(`PUT ${cfRuleId}: ${putResponse.status} - ${errText}`);
+            } else {
+              await env.DB.prepare("UPDATE justifications SET status = 'EXPIRED' WHERE rule_id = ? AND status = 'ACTIVE'").bind(cfRuleId).run();
             }
           } catch (e) {
             errors.push(`${cfRuleId}: ${e.message}`);
