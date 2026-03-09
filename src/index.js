@@ -253,8 +253,8 @@ export default {
                 const timestamp = new Date().toISOString();
                 const dbTasks = [
                     env.DB.prepare(
-                        'INSERT INTO justifications (id, timestamp, user_email, rule_id, rule_name, site_uri, justification) VALUES (?, ?, ?, ?, ?, ?, ?)'
-                    ).bind(justificationId, timestamp, cfUserEmail, cfRuleId, fetchedRuleName, cfSiteUri || '', justificationText).run(),
+                        'INSERT INTO justifications (id, timestamp, user_email, rule_id, rule_name, site_uri, justification, status) VALUES (?, ?, ?, ?, ?, ?, ?, ?)'
+                    ).bind(justificationId, timestamp, cfUserEmail, cfRuleId, fetchedRuleName, cfSiteUri || '', justificationText, 'ACTIVE').run(),
                     env.DB.prepare(
                         'INSERT OR IGNORE INTO rule_ids (rule_id, first_tracked_at, first_user_email) VALUES (?, ?, ?)'
                     ).bind(cfRuleId, timestamp, cfUserEmail).run(),
@@ -788,6 +788,7 @@ export default {
                     } else {
                         console.log(`Scheduled Task: Successfully emptied identity for Gateway Rule ${cfRuleId}.`);
                         await logEvent(env, 'GATEWAY_PUT_SUCCESS', { ruleId: cfRuleId, details: { trigger: 'DAILY_CRON' } });
+                        await env.DB.prepare("UPDATE justifications SET status = 'EXPIRED' WHERE rule_id = ?").bind(cfRuleId).run();
                     }
                 } catch (ruleError) {
                     console.error(`Scheduled Task: Error processing Gateway Rule ${cfRuleId}:`, ruleError);
@@ -881,6 +882,7 @@ async function handlePendingRevert(env) {
         } else {
           console.log(`PendingRevert: Reverted rule ${row.rule_id} for ${row.user_email}.`);
           await logEvent(env, 'PENDING_REVERT_SUCCESS', { userEmail: row.user_email, ruleId: row.rule_id });
+          await env.DB.prepare("UPDATE justifications SET status = 'REVERTED' WHERE rule_id = ? AND user_email = ? AND status = 'ACTIVE'").bind(row.rule_id, row.user_email).run();
         }
       } catch (e) {
         console.error(`PendingRevert: Error processing ${row.rule_id}: ${e.message}`);
@@ -911,7 +913,7 @@ async function handleAdminDashboard(env) {
   if (env.DB) {
     try {
       const { results } = await env.DB.prepare(
-        'SELECT id, timestamp, user_email, rule_id, rule_name, site_uri, justification FROM justifications ORDER BY timestamp DESC'
+        'SELECT id, timestamp, user_email, rule_id, rule_name, site_uri, justification, status FROM justifications ORDER BY timestamp DESC'
       ).all();
       justifications = results.map(row => ({
         timestamp: row.timestamp,
@@ -920,6 +922,7 @@ async function handleAdminDashboard(env) {
         ruleName: row.rule_name,
         siteUri: row.site_uri || '',
         justification: row.justification,
+        status: row.status || 'ACTIVE',
       }));
     } catch (e) {
       console.error('Error fetching justifications from DB:', e);
@@ -929,6 +932,12 @@ async function handleAdminDashboard(env) {
   // Escape HTML to prevent XSS from stored values
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
+  const statusBadge = (s) => {
+    if (s === 'ACTIVE') return '<span class="badge badge-active">ACTIVE</span>';
+    if (s === 'REVERTED') return '<span class="badge badge-reverted">REVERTED</span>';
+    return '';
+  };
+
   const tableRows = justifications.map((j) => `
     <tr>
       <td>${esc(j.ruleName)}</td>
@@ -937,6 +946,7 @@ async function handleAdminDashboard(env) {
       <td>${esc(j.userEmail)}</td>
       <td data-ts="${esc(j.timestamp)}">${esc(j.timestamp ? new Date(j.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '')}</td>
       <td>${esc(j.justification)}</td>
+      <td>${statusBadge(j.status)}</td>
     </tr>
   `).join('');
 
@@ -1140,6 +1150,18 @@ async function handleAdminDashboard(env) {
         word-break: break-word;
       }
 
+      .badge {
+        display: inline-block;
+        padding: 0.15rem 0.55rem;
+        border-radius: 999px;
+        font-size: 0.7rem;
+        font-weight: 600;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+      }
+      .badge-active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
+      .badge-reverted { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+
       .empty-state {
         text-align: center;
         padding: 3rem 1rem;
@@ -1293,6 +1315,7 @@ async function handleAdminDashboard(env) {
               <th data-col="3">User Email <span class="sort-arrow"></span></th>
               <th data-col="4" class="sorted-desc">Timestamp <span class="sort-arrow"></span></th>
               <th data-col="5">Justification <span class="sort-arrow"></span></th>
+              <th data-col="6">Status <span class="sort-arrow"></span></th>
             </tr>
           </thead>
           <tbody>
