@@ -715,8 +715,8 @@ export default {
     if (!env.DB) { console.error('D1 binding DB is not configured.'); return; }
     if (!env.API_TOKEN || !env.ACCOUNT_ID) { console.error('API_TOKEN or ACCOUNT_ID not configured.'); return; }
 
-    // --- Every-5-min cron: revert stale pending overrides ---
-    if (controller.cron === '*/5 * * * *') {
+    // --- Pending revert cron: any schedule that is NOT the daily 1am reset ---
+    if (controller.cron !== '0 1 * * *') {
       await logEvent(env, 'CRON_START', { details: { cron: controller.cron } });
       await handlePendingRevert(env);
       await logEvent(env, 'CRON_COMPLETE', { details: { cron: controller.cron } });

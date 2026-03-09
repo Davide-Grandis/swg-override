@@ -3,7 +3,7 @@
 	"version": "0.0.0",
 	"private": true,
 	"scripts": {
-		"deploy": "wrangler deploy",
+		"deploy": "wrangler deploy && node -e \"const r=require('child_process');const cfg=JSON.parse(r.execSync('npx wrangler d1 execute swg-rule-override-db --remote --command \\'SELECT key,value FROM config\\' --json').toString());const rows=(cfg[0]||cfg).results||[];const get=(k,d)=>(rows.find(r=>r.key===k)||{value:d}).value;const body=JSON.stringify({revert_after_mins:get('revert_after_mins','5'),cron_interval_mins:get('cron_interval_mins','5')});r.execSync('curl -s -X POST https://override.davideslab.eu/admin/settings -H \\'Content-Type: application/json\\' -d \\''+body+'\\'');console.log('Cron re-registered with',body);\"",
 		"dev": "wrangler dev"
 	},
 	"devDependencies": {
