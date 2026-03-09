@@ -1203,6 +1203,8 @@ async function handleAdminDashboard(env) {
       .badge-active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
       .badge-reverted { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
 
+      td:last-child { white-space: nowrap; }
+
       .btn-revoke {
         display: inline-block;
         padding: 0.1rem 0.5rem;
