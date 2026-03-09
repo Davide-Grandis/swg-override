@@ -983,7 +983,6 @@ async function handleAdminDashboard(env) {
     <tr>
       <td>${esc(j.ruleName)}</td>
       <td>${j.siteUri ? `<a href="${esc(j.siteUri)}" target="_blank" rel="noopener noreferrer">${esc(j.siteUri)}</a>` : ''}</td>
-      <td>${esc(j.ruleId)}</td>
       <td>${esc(j.userEmail)}</td>
       <td data-ts="${esc(j.timestamp)}">${esc(j.timestamp ? new Date(j.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '')}</td>
       <td>${esc(j.justification)}</td>
@@ -1185,7 +1184,7 @@ async function handleAdminDashboard(env) {
       }
       td a:hover { text-decoration: underline; }
 
-      td:nth-child(6) {
+      td:nth-child(5) {
         max-width: 320px;
         white-space: pre-wrap;
         word-break: break-word;
@@ -1369,11 +1368,10 @@ async function handleAdminDashboard(env) {
             <tr>
               <th data-col="0">Rule Name <span class="sort-arrow"></span></th>
               <th data-col="1">Requested URL <span class="sort-arrow"></span></th>
-              <th data-col="2">Rule ID <span class="sort-arrow"></span></th>
-              <th data-col="3">User Email <span class="sort-arrow"></span></th>
-              <th data-col="4" class="sorted-desc">Timestamp <span class="sort-arrow"></span></th>
-              <th data-col="5">Justification <span class="sort-arrow"></span></th>
-              <th data-col="6">Status <span class="sort-arrow"></span></th>
+              <th data-col="2">User Email <span class="sort-arrow"></span></th>
+              <th data-col="3" class="sorted-desc">Timestamp <span class="sort-arrow"></span></th>
+              <th data-col="4">Justification <span class="sort-arrow"></span></th>
+              <th data-col="5">Status <span class="sort-arrow"></span></th>
             </tr>
           </thead>
           <tbody>
