@@ -80,6 +80,46 @@ export default {
       }
     }
 
+    // --- /admin/revoke: remove a specific user's email from a Gateway rule (POST) ---
+    if (url.pathname === '/admin/revoke' && request.method === 'POST') {
+      if (!env.API_TOKEN || !env.ACCOUNT_ID) return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500, headers: { 'content-type': 'application/json' } });
+      if (!env.DB) return new Response(JSON.stringify({ error: 'DB not configured' }), { status: 500, headers: { 'content-type': 'application/json' } });
+      try {
+        let body;
+        try { body = await request.json(); } catch(e) { return new Response(JSON.stringify({ error: 'Invalid JSON' }), { status: 400, headers: { 'content-type': 'application/json' } }); }
+        const { rule_id, user_email } = body;
+        if (!rule_id || !user_email) return new Response(JSON.stringify({ error: 'Missing rule_id or user_email' }), { status: 400, headers: { 'content-type': 'application/json' } });
+        const ruleUrl = `https://api.cloudflare.com/client/v4/accounts/${env.ACCOUNT_ID}/gateway/rules/${rule_id}`;
+        const authHeaders = { 'Authorization': `Bearer ${env.API_TOKEN}`, 'Content-Type': 'application/json' };
+        const getResp = await fetch(ruleUrl, { method: 'GET', headers: authHeaders });
+        if (!getResp.ok) return new Response(JSON.stringify({ error: `GET failed: ${getResp.status}` }), { status: 502, headers: { 'content-type': 'application/json' } });
+        const existingRule = (await getResp.json()).result;
+        if (!existingRule) return new Response(JSON.stringify({ error: 'Rule not found' }), { status: 404, headers: { 'content-type': 'application/json' } });
+        let identity = existingRule.identity || '';
+        const emailToken = `"${user_email}"`;
+        if (identity.includes('identity.email in {')) {
+          const regex = /\{"([^"]+(?:"\s*"[^"]+)*)"\}/;
+          const match = identity.match(regex);
+          if (match && match[1]) {
+            const emails = match[1].split('" "').filter(Boolean).filter(e => e !== user_email);
+            identity = emails.length > 0 ? identity.replace(regex, `{"${emails.join('" "')}"}`) : '';
+          }
+        } else if (identity === `not(identity.email in {${emailToken}})`) {
+          identity = '';
+        }
+        const putResp = await fetch(ruleUrl, { method: 'PUT', headers: authHeaders, body: JSON.stringify({ ...existingRule, identity }) });
+        if (!putResp.ok) {
+          const errText = await putResp.text();
+          return new Response(JSON.stringify({ error: `PUT failed: ${putResp.status} - ${errText}` }), { status: 502, headers: { 'content-type': 'application/json' } });
+        }
+        await env.DB.prepare("UPDATE justifications SET status = 'REVERTED' WHERE rule_id = ? AND user_email = ? AND status = 'ACTIVE'").bind(rule_id, user_email).run();
+        await logEvent(env, 'ADMIN_REVOKE', { userEmail: user_email, ruleId: rule_id });
+        return new Response(JSON.stringify({ ok: true }), { headers: { 'content-type': 'application/json' } });
+      } catch (e) {
+        return new Response(JSON.stringify({ error: e.message }), { status: 500, headers: { 'content-type': 'application/json' } });
+      }
+    }
+
     // --- /trigger-override: fire Gateway PUT immediately when user clicks "I understand" ---
     if (url.pathname === '/trigger-override' && request.method === 'POST') {
       if (!env.API_TOKEN || !env.ACCOUNT_ID) return new Response(JSON.stringify({ error: 'Not configured' }), { status: 500, headers: { 'content-type': 'application/json' } });
@@ -934,8 +974,8 @@ async function handleAdminDashboard(env) {
   // Escape HTML to prevent XSS from stored values
   const esc = (s) => String(s || '').replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;').replace(/"/g, '&quot;');
 
-  const statusBadge = (s) => {
-    if (s === 'ACTIVE') return '<span class="badge badge-active">ACTIVE</span>';
+  const statusBadge = (s, ruleId, userEmail) => {
+    if (s === 'ACTIVE') return `<span class="badge badge-active">ACTIVE</span> <button class="btn-revoke" data-rule-id="${esc(ruleId)}" data-user-email="${esc(userEmail)}">Revoke</button>`;
     return '';
   };
 
@@ -947,7 +987,7 @@ async function handleAdminDashboard(env) {
       <td>${esc(j.userEmail)}</td>
       <td data-ts="${esc(j.timestamp)}">${esc(j.timestamp ? new Date(j.timestamp).toLocaleString('en-US', { dateStyle: 'medium', timeStyle: 'short' }) : '')}</td>
       <td>${esc(j.justification)}</td>
-      <td>${statusBadge(j.status)}</td>
+      <td>${statusBadge(j.status, j.ruleId, j.userEmail)}</td>
     </tr>
   `).join('');
 
@@ -1162,6 +1202,21 @@ async function handleAdminDashboard(env) {
       }
       .badge-active { background: rgba(16,185,129,0.15); color: #10b981; border: 1px solid rgba(16,185,129,0.3); }
       .badge-reverted { background: rgba(245,158,11,0.15); color: #f59e0b; border: 1px solid rgba(245,158,11,0.3); }
+
+      .btn-revoke {
+        display: inline-block;
+        padding: 0.1rem 0.5rem;
+        font-size: 0.7rem;
+        font-weight: 500;
+        border-radius: 4px;
+        border: 1px solid rgba(239,68,68,0.4);
+        background: rgba(239,68,68,0.1);
+        color: #ef4444;
+        cursor: pointer;
+        margin-left: 0.4rem;
+        vertical-align: middle;
+      }
+      .btn-revoke:hover { background: rgba(239,68,68,0.2); }
 
       .empty-state {
         text-align: center;
@@ -1440,6 +1495,25 @@ async function handleAdminDashboard(env) {
             if (d.ok) { showToast('Logs cleared. Reloading...', 'success'); setTimeout(function() { location.reload(); }, 1200); }
             else { showToast('Error: ' + d.error, 'error'); }
           }).catch(function() { showToast('Request failed.', 'error'); });
+      });
+
+      // --- Revoke individual override ---
+      document.addEventListener('click', function(e) {
+        if (!e.target.classList.contains('btn-revoke')) return;
+        var ruleId = e.target.getAttribute('data-rule-id');
+        var userEmail = e.target.getAttribute('data-user-email');
+        if (!confirm('Revoke override for ' + userEmail + '? Their email will be removed from the Gateway rule.')) return;
+        e.target.disabled = true;
+        e.target.textContent = '...';
+        fetch('/admin/revoke', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ rule_id: ruleId, user_email: userEmail }),
+        }).then(function(r) { return r.json(); })
+          .then(function(d) {
+            if (d.ok) { showToast('Revoked ' + userEmail + ' successfully.', 'success'); setTimeout(function() { location.reload(); }, 1200); }
+            else { showToast('Error: ' + (d.error || 'Unknown'), 'error'); e.target.disabled = false; e.target.textContent = 'Revoke'; }
+          }).catch(function() { showToast('Request failed.', 'error'); e.target.disabled = false; e.target.textContent = 'Revoke'; });
       });
 
       // --- Live Refresh ---
